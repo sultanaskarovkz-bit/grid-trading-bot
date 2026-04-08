@@ -51,6 +51,31 @@ class MT5Connector:
     def __init__(self, config: MT5Config):
         self.config = config
         self._connected = False
+        self._symbol_map = {}  # maps base symbol (EURUSD) -> broker symbol (EURUSDm)
+
+    def _detect_symbol(self, base_symbol: str) -> str:
+        """Detect actual broker symbol name (some brokers add suffix like 'm')."""
+        if base_symbol in self._symbol_map:
+            return self._symbol_map[base_symbol]
+
+        # Try exact match first
+        info = self.mt5.symbol_info(base_symbol)
+        if info is not None:
+            self._symbol_map[base_symbol] = base_symbol
+            return base_symbol
+
+        # Try common suffixes
+        for suffix in ["m", ".m", ".i", ".e", ".pro", ".raw", ".std"]:
+            candidate = base_symbol + suffix
+            info = self.mt5.symbol_info(candidate)
+            if info is not None:
+                self._symbol_map[base_symbol] = candidate
+                logger.info(f"Symbol mapping: {base_symbol} -> {candidate}")
+                return candidate
+
+        # Fallback to original
+        self._symbol_map[base_symbol] = base_symbol
+        return base_symbol
 
     def connect(self) -> bool:
         try:
@@ -88,12 +113,19 @@ class MT5Connector:
             self.mt5.shutdown()
             self._connected = False
 
+    def _ensure_connected(self) -> None:
+        """Verify MT5 connection is active."""
+        if not self._connected:
+            raise ConnectionError("Not connected to MT5. Call connect() first.")
+
     def get_ohlcv(self, symbol: str, timeframe: str, bars: int) -> pd.DataFrame:
+        self._ensure_connected()
         tf = MT5_TIMEFRAMES.get(timeframe)
         if tf is None:
             raise ValueError(f"Unknown timeframe: {timeframe}")
 
-        rates = self.mt5.copy_rates_from_pos(symbol, tf, 0, bars)
+        broker_symbol = self._detect_symbol(symbol)
+        rates = self.mt5.copy_rates_from_pos(broker_symbol, tf, 0, bars)
         if rates is None or len(rates) == 0:
             raise ValueError(f"No data for {symbol}")
 
@@ -108,12 +140,15 @@ class MT5Connector:
 
     def get_current_price(self, symbol: str) -> tuple:
         """Returns (bid, ask)."""
-        tick = self.mt5.symbol_info_tick(symbol)
+        self._ensure_connected()
+        broker_symbol = self._detect_symbol(symbol)
+        tick = self.mt5.symbol_info_tick(broker_symbol)
         if tick is None:
             raise ValueError(f"No tick data for {symbol}")
         return tick.bid, tick.ask
 
     def get_account_info(self) -> dict:
+        self._ensure_connected()
         info = self.mt5.account_info()
         return {
             "balance": info.balance,
@@ -126,12 +161,13 @@ class MT5Connector:
     def open_order(self, symbol: str, direction: Direction,
                    lot_size: float, comment: str = "") -> int | None:
         """Place market order. Returns ticket or None."""
-        symbol_info = self.mt5.symbol_info(symbol)
+        broker_symbol = self._detect_symbol(symbol)
+        symbol_info = self.mt5.symbol_info(broker_symbol)
         if symbol_info is None:
-            logger.error(f"Symbol {symbol} not found")
+            logger.error(f"Symbol {symbol} ({broker_symbol}) not found")
             return None
         if not symbol_info.visible:
-            self.mt5.symbol_select(symbol, True)
+            self.mt5.symbol_select(broker_symbol, True)
 
         bid, ask = self.get_current_price(symbol)
         order_type = self.mt5.ORDER_TYPE_BUY if direction == Direction.LONG else self.mt5.ORDER_TYPE_SELL
@@ -139,7 +175,7 @@ class MT5Connector:
 
         request = {
             "action": self.mt5.TRADE_ACTION_DEAL,
-            "symbol": symbol,
+            "symbol": broker_symbol,
             "volume": lot_size,
             "type": order_type,
             "price": price,
@@ -153,22 +189,23 @@ class MT5Connector:
         result = self.mt5.order_send(request)
         if result is None or result.retcode != self.mt5.TRADE_RETCODE_DONE:
             error = result.comment if result else "unknown error"
-            logger.error(f"Order failed for {symbol}: {error}")
+            logger.error(f"Order failed for {broker_symbol}: {error}")
             return None
 
-        logger.info(f"Order opened: {symbol} {direction.value} {lot_size} lots @ {price}, ticket: {result.order}")
+        logger.info(f"Order opened: {broker_symbol} {direction.value} {lot_size} lots @ {price}, ticket: {result.order}")
         return result.order
 
     def close_order(self, ticket: int, symbol: str, direction: Direction,
                     lot_size: float) -> bool:
         """Close a specific position by ticket."""
+        broker_symbol = self._detect_symbol(symbol)
         bid, ask = self.get_current_price(symbol)
         close_type = self.mt5.ORDER_TYPE_SELL if direction == Direction.LONG else self.mt5.ORDER_TYPE_BUY
         price = bid if direction == Direction.LONG else ask
 
         request = {
             "action": self.mt5.TRADE_ACTION_DEAL,
-            "symbol": symbol,
+            "symbol": broker_symbol,
             "volume": lot_size,
             "type": close_type,
             "position": ticket,
@@ -191,7 +228,8 @@ class MT5Connector:
 
     def close_all(self, symbol: str | None = None) -> int:
         """Close all positions, optionally filtered by symbol."""
-        positions = self.mt5.positions_get(symbol=symbol) if symbol else self.mt5.positions_get()
+        broker_symbol = self._detect_symbol(symbol) if symbol else None
+        positions = self.mt5.positions_get(symbol=broker_symbol) if broker_symbol else self.mt5.positions_get()
         if positions is None:
             return 0
 
@@ -294,7 +332,10 @@ class LiveTrader:
                 close_dict, self.config.grid.correlation_window
             )
 
-        timestamp = pd.Timestamp.now(tz="UTC")
+        from datetime import timezone, timedelta
+        tz_offset = self.config.grid.timezone_offset_utc if hasattr(self.config.grid, 'timezone_offset_utc') else 3
+        tz_info = timezone(timedelta(hours=tz_offset))
+        timestamp = pd.Timestamp.now(tz=tz_info)
         actions = self.strategy.on_bar(timestamp, prices, equity, corr_matrix)
 
         # Execute actions

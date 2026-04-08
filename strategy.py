@@ -129,8 +129,9 @@ class GridStrategy:
         self._pair_sl_pct = config.stop_drawdown_pct / 3  # individual pair SL
         self._trailing_activation_pct = config.fix_take_profit_pct * 0.6  # activate trailing at 60% of TP
         self._trailing_distance_pct = config.fix_take_profit_pct * 0.4  # trail by 40% of TP
-        self._base_cooldown_hours = 2
-        self._max_cooldown_hours = 24
+        self._base_cooldown_hours = config.base_cooldown_hours if hasattr(config, 'base_cooldown_hours') else 2
+        self._max_cooldown_hours = config.max_cooldown_hours if hasattr(config, 'max_cooldown_hours') else 24
+        self._max_simultaneous_pairs = config.max_simultaneous_pairs if hasattr(config, 'max_simultaneous_pairs') else 5
 
         for pair in pairs:
             self.pair_states[pair.symbol] = PairState(
@@ -200,7 +201,8 @@ class GridStrategy:
             if state.peak_basket_pnl > 0:
                 peak_pct = (state.peak_basket_pnl / max(effective_equity, 100)) * 100
                 if peak_pct >= self._trailing_activation_pct:
-                    trail_level = state.peak_basket_pnl * (1 - self._trailing_distance_pct / peak_pct)
+                    # Trail by fixed percentage of peak PnL
+                    trail_level = state.peak_basket_pnl * (1 - self._trailing_distance_pct / self._pair_tp_pct)
                     if pair_pnl < trail_level and pair_pnl > 0:
                         close_action = self._close_pair_basket(
                             state, timestamp, prices[symbol]["close"], "TRAILING_TP"
@@ -227,7 +229,6 @@ class GridStrategy:
         ]
 
         active_pair_count = sum(1 for s in self.pair_states.values() if s.has_positions)
-        max_simultaneous_pairs = 5  # allow most pairs to be active
 
         for symbol, state in self.pair_states.items():
             if symbol not in prices:
@@ -242,7 +243,7 @@ class GridStrategy:
                     continue
 
             # Max simultaneous new pairs
-            if not state.has_positions and active_pair_count >= max_simultaneous_pairs:
+            if not state.has_positions and active_pair_count >= self._max_simultaneous_pairs:
                 continue
 
             price_data = prices[symbol]

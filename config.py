@@ -75,6 +75,35 @@ class GridConfig:
     risk_per_trade_pct: float = 1.0
     equity_base: float = 10_000.0
 
+    # Cooldown after stops
+    base_cooldown_hours: int = 2
+    max_cooldown_hours: int = 24
+    max_simultaneous_pairs: int = 5
+
+    # Timezone offset from UTC (Moscow = 3)
+    timezone_offset_utc: int = 3
+
+    def __post_init__(self):
+        """Validate parameters after initialization."""
+        if self.ema_fast >= self.ema_slow:
+            self.ema_fast, self.ema_slow = min(self.ema_fast, self.ema_slow), max(self.ema_fast, self.ema_slow)
+        if self.base_grid_distance_pips <= 0:
+            self.base_grid_distance_pips = 30.0
+        if self.lot_multiplier < 1.0:
+            self.lot_multiplier = 1.0
+        if self.grid_distance_multiplier < 1.0:
+            self.grid_distance_multiplier = 1.0
+        if self.max_grid_levels < 1:
+            self.max_grid_levels = 1
+        if self.fix_take_profit_pct <= 0:
+            self.fix_take_profit_pct = 1.0
+        if self.stop_drawdown_pct <= 0:
+            self.stop_drawdown_pct = 10.0
+        if self.max_portfolio_drawdown_pct <= self.stop_drawdown_pct:
+            self.max_portfolio_drawdown_pct = self.stop_drawdown_pct + 5.0
+        if self.equity_base <= 0:
+            self.equity_base = 10_000.0
+
     def get_time_delay(self, level: int) -> int:
         """Get required delay in seconds before opening grid level N."""
         if level == 0:

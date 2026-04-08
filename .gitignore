@@ -18,6 +18,7 @@ demo_report/
 
 # Secrets
 .env
+mt5_config.json
 *.pid
 
 # Bot state (local runtime)
@@ -35,5 +36,9 @@ optuna_study.db
 Thumbs.db
 .DS_Store
 
+# PyInstaller
+*.spec
+
 # Misc
 .claude/
+launcher.py

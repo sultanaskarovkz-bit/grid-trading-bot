@@ -96,6 +96,10 @@ class BacktestEngine:
             else:
                 common_index = common_index.intersection(idx)
 
+        if common_index is None or len(common_index) == 0:
+            logger.error("No common data between pairs after alignment")
+            return self._empty_result()
+
         for symbol in prepared_data:
             prepared_data[symbol] = prepared_data[symbol].loc[common_index]
 

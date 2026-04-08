@@ -1,30 +1,35 @@
 #!/bin/bash
 echo ""
-echo "============================================================"
-echo "  GRID TRADING BOT - Запуск панели управления"
-echo "============================================================"
+echo "    ========================================"
+echo "         Grid Trading Bot v1.0"
+echo "    ========================================"
+echo ""
+echo "    Запуск... подождите 10-15 секунд"
 echo ""
 
 # Check Python
 if ! command -v python3 &> /dev/null; then
-    echo "  [ОШИБКА] Python не найден!"
-    echo "  Установи: brew install python3"
-    echo "  Или скачай с https://python.org"
+    echo "    [!] Python не найден."
+    echo ""
+    echo "    Установи: brew install python3"
+    echo "    Или скачай с https://python.org"
     exit 1
 fi
 
-echo "  [1/3] Python найден:"
-python3 --version
-echo ""
-
 # Install dependencies
-echo "  [2/3] Установка зависимостей..."
-pip3 install pandas numpy yfinance optuna matplotlib scipy requests streamlit plotly --quiet 2>/dev/null
-echo "  [OK] Зависимости установлены"
+echo "    [1/2] Проверяю зависимости..."
+pip3 install -r requirements.txt --quiet 2>/dev/null
+echo "    [OK] Готово"
 echo ""
 
-# Launch dashboard
-echo "  [3/3] Открываю панель управления в браузере..."
-echo "  (Для остановки нажми Ctrl+C)"
+echo "    [2/2] Открываю панель управления..."
 echo ""
-streamlit run dashboard.py --server.headless false --theme.base light
+echo "    Панель откроется в браузере автоматически."
+echo "    Если не открылась - перейди на http://localhost:8501"
+echo ""
+echo "    Чтобы остановить - нажми Ctrl+C"
+echo ""
+
+# Open browser and run
+open http://localhost:8501 2>/dev/null || xdg-open http://localhost:8501 2>/dev/null &
+streamlit run dashboard.py --server.headless true --browser.gatherUsageStats false

@@ -70,9 +70,18 @@ class RiskManager:
         return dd >= self.config.max_portfolio_drawdown_pct
 
     def _in_active_session(self, timestamp: pd.Timestamp) -> bool:
-        """Check if current time is within active trading hours (UTC)."""
-        hour = timestamp.hour
-        return self.config.session_start_utc <= hour < self.config.session_end_utc
+        """Check if current time is within active trading hours (UTC-based)."""
+        # Convert to UTC for session check regardless of local timezone
+        if timestamp.tzinfo is not None:
+            utc_hour = timestamp.utc.hour if hasattr(timestamp, 'utc') else timestamp.hour
+            # Use tz_convert to get UTC hour
+            try:
+                utc_hour = timestamp.tz_convert("UTC").hour
+            except Exception:
+                utc_hour = timestamp.hour
+        else:
+            utc_hour = timestamp.hour
+        return self.config.session_start_utc <= utc_hour < self.config.session_end_utc
 
     def _check_correlation(self, symbol: str,
                            active_symbols_with_direction: list[tuple[str, str]],
@@ -114,7 +123,7 @@ class RiskManager:
         if atr_value > 0 and pair.pip_value > 0:
             typical_atr_pips = 50  # baseline
             current_atr_pips = atr_value / pair.pip_value
-            if current_atr_pips > 0:
+            if current_atr_pips > 0.01:  # guard against near-zero ATR
                 vol_factor = typical_atr_pips / current_atr_pips
                 vol_factor = np.clip(vol_factor, 0.5, 2.0)
                 lot *= vol_factor

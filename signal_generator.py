@@ -16,7 +16,7 @@ import json
 import logging
 import time
 import traceback
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import numpy as np
@@ -351,7 +351,9 @@ class SignalGenerator:
             )
 
         # 5. Run strategy logic
-        timestamp = pd.Timestamp.now(tz="UTC")
+        tz_offset = self.config.grid.timezone_offset_utc
+        tz_info = timezone(timedelta(hours=tz_offset))
+        timestamp = pd.Timestamp.now(tz=tz_info)
         actions = self.strategy.on_bar(
             timestamp, prices, self.virtual_equity, corr_matrix
         )
@@ -467,8 +469,9 @@ class SignalGenerator:
             daily_pnl=daily_pnl,
         )
 
-        # Reset daily P&L tracker at midnight UTC
-        now = datetime.utcnow()
+        # Reset daily P&L tracker at midnight (local timezone)
+        tz_offset = self.config.grid.timezone_offset_utc
+        now = datetime.now(timezone(timedelta(hours=tz_offset)))
         if now.hour == 0 and now.minute < 10:
             self._daily_start_equity = self.virtual_equity
 
@@ -518,7 +521,7 @@ class SignalGenerator:
 
     def _smart_sleep(self) -> None:
         """Sleep with awareness of market hours."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         weekday = now.weekday()
 
         # Weekend: sleep longer (market closed Fri 22:00 - Sun 22:00 UTC)
@@ -565,6 +568,7 @@ class SignalGenerator:
                             "entry_price": o.entry_price,
                             "lot_size": o.lot_size,
                             "entry_time": o.entry_time.isoformat(),
+                            "commission": o.commission,
                         }
                         for o in pair_state.active_orders
                     ],
@@ -603,6 +607,8 @@ class SignalGenerator:
                     for o in pos["orders"]:
                         pair_cfg = next((p for p in self.pairs if p.symbol == symbol), None)
                         if pair_cfg:
+                            commission = o.get("commission",
+                                               self.config.backtest.commission_per_lot * o["lot_size"])
                             order = GridOrder(
                                 order_id=f"restored_{o['level']}",
                                 symbol=symbol,
@@ -613,6 +619,7 @@ class SignalGenerator:
                                 entry_time=pd.Timestamp(o["entry_time"]),
                                 pip_value=pair_cfg.pip_value,
                                 contract_size=pair_cfg.contract_size,
+                                commission=commission,
                             )
                             pair_state.active_orders.append(order)
                             pair_state.last_order_time = order.entry_time

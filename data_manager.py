@@ -101,8 +101,18 @@ class DataManager:
         }, index=raw.index)
 
         df.index.name = "datetime"
-        df = df.dropna()
-        df = df.ffill()  # forward-fill gaps
+        df = df.ffill()  # forward-fill small gaps first
+        df = df.dropna()  # then remove rows that still have NaN
+
+        if df.empty:
+            raise ValueError(f"No valid data for {symbol} after cleaning")
+
+        # Validate no all-zero or constant data
+        if (df["close"] == 0).any():
+            df = df[df["close"] > 0]
+
+        if len(df) < 50:
+            raise ValueError(f"Insufficient data for {symbol}: only {len(df)} bars (need 50+)")
 
         df.to_csv(cache_file)
         self._cache[cache_key] = df

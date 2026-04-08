@@ -13,6 +13,7 @@ import argparse
 import logging
 import sys
 from copy import deepcopy
+from pathlib import Path
 
 from config import AppConfig, Mode
 
@@ -55,9 +56,9 @@ def parse_args() -> argparse.Namespace:
 
     # Live
     lv = subparsers.add_parser("live", help="Live trading via MT5")
-    lv.add_argument("--server", required=True, help="MT5 server")
-    lv.add_argument("--login", type=int, required=True, help="Account login")
-    lv.add_argument("--password", required=True, help="Account password")
+    lv.add_argument("--server", default="", help="MT5 server (or set MT5_SERVER env)")
+    lv.add_argument("--login", type=int, default=0, help="Account login (or set MT5_LOGIN env)")
+    lv.add_argument("--password", default="", help="Account password (or set MT5_PASSWORD env)")
     lv.add_argument("--path", default="", help="Path to MT5 terminal")
     lv.add_argument("--timeframe", default="1h", help="Timeframe")
     lv.add_argument("--token", default="", help="Telegram bot token")
@@ -254,11 +255,25 @@ def main():
         run_signals(config, token=args.token, chat_id=args.chat_id)
 
     elif args.mode == "live":
+        import os, json  # noqa: E401
         config.mode = Mode.LIVE
-        config.mt5.server = args.server
-        config.mt5.login = args.login
-        config.mt5.password = args.password
+
+        # Priority: CLI args > mt5_config.json > env vars
+        mt5_cfg_file = Path("mt5_config.json")
+        saved_mt5 = {}
+        if mt5_cfg_file.exists():
+            with open(mt5_cfg_file) as f:
+                saved_mt5 = json.load(f)
+
+        config.mt5.server = args.server or saved_mt5.get("server", "") or os.environ.get("MT5_SERVER", "")
+        config.mt5.login = args.login or int(saved_mt5.get("login", 0)) or int(os.environ.get("MT5_LOGIN", "0"))
+        config.mt5.password = args.password or saved_mt5.get("password", "") or os.environ.get("MT5_PASSWORD", "")
         config.mt5.path = args.path
+
+        if not config.mt5.server or not config.mt5.login or not config.mt5.password:
+            print("ERROR: MT5 credentials required. Use dashboard, --server/--login/--password flags, or mt5_config.json")
+            sys.exit(1)
+
         config.backtest.timeframe = args.timeframe
         run_live(config, token=getattr(args, "token", ""),
                  chat_id=getattr(args, "chat_id", ""))

@@ -23,5 +23,9 @@
   "session_end_utc": 21,
   "dynamic_lot_enabled": true,
   "risk_per_trade_pct": 2.859820427970951,
-  "equity_base": 10000.0
+  "equity_base": 10000.0,
+  "base_cooldown_hours": 2,
+  "max_cooldown_hours": 24,
+  "max_simultaneous_pairs": 5,
+  "timezone_offset_utc": 3
 }
