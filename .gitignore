@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# Data cache (downloaded market data)
+data_cache/
+
+# Reports (generated locally)
+reports/
+reports_optimized/
+demo_report/
+
+# Secrets
+.env
+*.pid
+
+# Bot state (local runtime)
+signal_state.json
+bot.log
+optuna_study.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Misc
+.claude/
